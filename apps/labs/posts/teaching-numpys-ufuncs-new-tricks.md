@@ -624,3 +624,13 @@ Written as a gufunc with signature `(n),(m?)->(m?)`, the core dimension `n` is t
 What is still open is whether to expose an `axis` keyword at the Python level or to always search along the innermost axis and let people bring the axis they want to the end themselves.
 
 `numpy.unwrap` became a gufunc in [numpy/numpy#31848](https://github.com/numpy/numpy/pull/31848), the mask-aware `numpy.ma.unwrap` was added in [numpy/numpy#32091](https://github.com/numpy/numpy/pull/32091), and `numpy.searchsorted` is being worked on in [numpy/numpy#32346](https://github.com/numpy/numpy/pull/32346).
+
+## Wrapping up and what may come next
+
+On the technical side, there is a clear list of things to finish.
+The multi-output reduction mechanism currently only works with the `reduce` method, so the next step is teaching `reduceat` and `accumulate` to pick up the dedicated reduction loops too, which is being worked on in [numpy/numpy#32212](https://github.com/numpy/numpy/pull/32212) and [numpy/numpy#32213](https://github.com/numpy/numpy/pull/32213), and `segmented_reduce` also needs to be finalized in [numpy/numpy#32243](https://github.com/numpy/numpy/pull/32243).
+After that, it is worth exploring what else the new reduction loops make possible. Anything that can be expressed as a reduction operation can now get its own dedicated single-pass loop, and computing the mean and the variance of an array in a single pass is one example that comes to mind.
+
+On a personal note, this internship was a very valuable learning experience.
+I came into it with essentially no C experience: I had read [_The C Programming Language_ (K&R)](https://en.wikipedia.org/wiki/The_C_Programming_Language) and the [Extending and Embedding the Python Interpreter](https://docs.python.org/3/extending/index.html) docs, and built a [small C extension](https://github.com/ikrommyd/tensor.c) to learn how C extensions are written, and that was about it, so getting to learn NumPy's internals was more valuable to me than I can express.
+Through this work I also became a member of the NumPy triage team, and I will continue working on NumPy, hopefully becoming a maintainer one day.
