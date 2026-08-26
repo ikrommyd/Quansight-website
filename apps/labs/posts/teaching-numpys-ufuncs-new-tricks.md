@@ -5,8 +5,8 @@ published: August 26, 2026
 description: 'A recap of my Quansight internship working on NumPy internals: multi-output reductions and np.minmax, segmented reductions, and new gufuncs.'
 category: [PyData ecosystem, Internship]
 featuredImage:
-  src: /posts/teaching-numpys-ufuncs-new-tricks/logo.png
-  alt: 'NumPy logo.'
+  src: /posts/teaching-numpys-ufuncs-new-tricks/hero.png
+  alt: 'NumPy logo surrounded by sketches of arrays.'
 hero:
   imageSrc: /posts/teaching-numpys-ufuncs-new-tricks/hero.png
   imageAlt: 'NumPy logo surrounded by sketches of arrays.'
