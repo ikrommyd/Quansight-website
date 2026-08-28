@@ -24,10 +24,10 @@ Before getting to that though, here is the short story of how a physicist who us
 I am not a computer scientist or an engineer.
 I am an impostor: a physicist.
 I had never programmed before in my life until starting college, where my first two classes were in Java, and they were enough to convince me that I did not want to program ever again.
-What changed my mind was a computational physics track a couple of years later, where the professor forced us to use a Unix-like operating system, and the first time I used a terminal my mind was blown: "So to copy all the pdf files from one folder to another, you're telling me that I don't actually have to open a file explorer and manually select all the files? I can just do `cp source/*.pdf destination`? Wow!"
+What changed my mind was a computational physics track a couple of years later, where the professor forced us to use a Unix-like operating system. The first time I used a terminal my mind was blown: "So to copy all the pdf files from one folder to another, you're telling me that I don't actually have to open a file explorer and manually select all the files? I can just do `cp source/*.pdf destination`? Wow!"
 
-I ended up doing a PhD in High-Energy Physics, a field that collects petabytes of data per experiment per year, as a member of the [CMS](https://cms.cern) experiment at [CERN](https://home.cern), where I worked heavily with the [Scikit-HEP](https://scikit-hep.org) stack of tools.
-I wanted to program more and I was also learning more about open source software, so I started cold-messaging people like "Hey, you maintain this tool, I'm a HEP student, I want to work on it", and I ended up becoming a maintainer of a few of those tools, most notably [Awkward Array](https://awkward-array.org) and [Coffea](https://coffea-hep.readthedocs.io).
+I ended up doing a PhD in High-Energy Physics, a field that collects petabytes of data per experiment per year, as a member of the [CMS](https://cms.cern) experiment at [CERN](https://home.cern). There I worked heavily with the [Scikit-HEP](https://scikit-hep.org) stack of tools.
+I wanted to program more and I was also learning more about open source software, so I started cold-messaging people like "Hey, you maintain this tool, I'm a HEP student, I want to work on it". That is how I ended up becoming a maintainer of a few of those tools, most notably [Awkward Array](https://awkward-array.org) and [Coffea](https://coffea-hep.readthedocs.io).
 Scikit-HEP is itself a member of [Scientific Python](https://scientific-python.org), so I gradually got more involved there too, while my love for physics was going down and my love for programming and scientific computing was going up.
 At [SciPy 2025](https://www.scipy2025.scipy.org) I hacked a bit on NumPy during the sprints and met [Nathan Goldbaum](https://github.com/ngoldbaum), who would become my mentor and who told me to apply for the Quansight internship program.
 A year later, I was accepted into the 2026 Quansight internship cohort where I had the opportunity to work on NumPy!
@@ -43,7 +43,7 @@ Perhaps this paragraph did not make a lot of sense and there were some unknown w
 NumPy has a concept of "universal functions" or "[ufuncs](https://numpy.org/doc/stable/user/basics.ufuncs.html)" for short.
 Ufuncs are functions that operate on arrays in an element-wise fashion. They are "vectorized" and they take in a fixed number of inputs and produce a fixed number of outputs.
 They also support broadcasting and typecasting and other standard features.
-For example, [numpy.add](https://numpy.org/doc/stable/reference/generated/numpy.add.html#numpy.add) is a ufunc that takes two arrays as input arguments and writes to one output array whose elements are the result of the element-by-element addition of the elements of the two input arrays.
+For example, [numpy.add](https://numpy.org/doc/stable/reference/generated/numpy.add.html#numpy.add) is a ufunc that takes two arrays as input arguments and writes to one output array whose elements are the element-by-element sums of the two input arrays.
 
 ```python
 >>> import numpy as np
@@ -64,7 +64,7 @@ array([[2.1, 4.2],
        [4.1, 6.2]])
 ```
 
-where you can notice that `integer_array` is a 2x2 array of integers, while `float_array` is a single row of two doubles. Integers need to be upcasted to doubles to do the addition and also `float_array` needs to be broadcasted to every row of `integer_array` to make the shapes match and do the addition.
+where you can notice that `integer_array` is a 2x2 array of integers, while `float_array` is a single row of two doubles. NumPy upcasts the integers to doubles and broadcasts `float_array` to every row of `integer_array` to make the shapes match.
 
 There are also [generalized ufuncs](https://numpy.org/doc/stable/reference/c-api/generalized-ufuncs.html#c-api-generalized-ufuncs) which are functions over arrays of elements.
 They operate on a subarray-by-subarray basis instead of element-by-element.
@@ -148,7 +148,7 @@ npy_intp out_step = steps[2];
 ```
 
 A stride is how many _bytes_ to move forward to land on the next element of that operand, which is the other reason the pointers are `char *`, since adding a stride to a `char *` moves exactly that many bytes.
-For a contiguous array of doubles the stride is just `sizeof(double)`, but an array can also be strided (a slice like `a[::2]` for example) or even broadcast, in which case the stride is `0` and the pointer keeps reading the same element, so the loop cannot assume anything and just uses whatever it is given.
+For a contiguous array of doubles the stride is just `sizeof(double)`, but an array can also be strided (a slice like `a[::2]` for example) or even broadcast, in which case the stride is `0` and the pointer keeps reading the same element. The loop cannot assume anything and just uses whatever it is given.
 
 Finally the body, which walks all three buffers in lockstep:
 
@@ -167,7 +167,7 @@ for (npy_intp i = 0; i < n; i++) {
 
 Each iteration casts the two input pointers to `double *` and dereferences them to get the current pair of values, adds them, writes the result through the output pointer, and then advances all three pointers by their strides to land on the next element.
 
-All the setup for the loop is done by NumPy as part of NumPy's ufunc infrastructure. Therefore, a set of loop implementations for different data types and some metadata about the operation is enough to create a ufunc. We did `double` here, which is `numpy.float64` in NumPy. To define a ufunc over more data types you need to define such loops for all the data types you want the loop to work on. For more information on how to create your own ufuncs, see the [Writing your own ufunc docs](https://numpy.org/devdocs/user/c-info.ufunc-tutorial.html).
+NumPy's ufunc infrastructure does all the setup for the loop. Therefore, a set of loop implementations for different data types and some metadata about the operation is enough to create a ufunc. We did `double` here, which is `numpy.float64` in NumPy. To define a ufunc over more data types you need to define such loops for all the data types you want the loop to work on. For more information on how to create your own ufuncs, see the [Writing your own ufunc docs](https://numpy.org/devdocs/user/c-info.ufunc-tutorial.html).
 
 ### How NumPy does reductions
 
@@ -221,7 +221,7 @@ If we set the `args[0]` input pointer to the accumulator location, and we set `a
 Then if we set `steps[0] = steps[2] = 0` and seed the accumulator with the value 0, we have an accumulator that starts at zero and does not move.
 The loop now does exactly what we want.
 
-And this is what NumPy does in the `reduce` method of ufuncs. To do summation in particular, it steers the `numpy.add` loop like this to reduce over an array whose data buffer is `data` and has `n` elements and a stride `stride` to get the next element
+And this is what NumPy does in the `reduce` method of ufuncs. To do summation in particular, it steers the `numpy.add` loop like this. Here the array being reduced has data buffer `data`, `n` elements, and a stride `stride` between elements:
 
 ```c
 double add_reduce(double *data, npy_intp n, npy_intp stride)
@@ -251,7 +251,7 @@ double arr[3] = {1.0, 2.0, 3.0};
 double total = add_reduce(arr, 3, sizeof(double));   /* 6.0 */
 ```
 
-Now for more than one dimension and for reducing over axes, the steering gets a little more complicated but for example to do a reduction like this
+Now for more than one dimension and for reducing over axes, the steering gets a little more complicated. For example, to do a reduction like this
 
 ```python
 >>> arr
@@ -262,7 +262,7 @@ array([[0, 1, 2],
 array([ 3, 12, 21])
 ```
 
-you can imagine that an accumulator is created and seeded for every row that is being reduced and that the ufunc loop is called three times, once per row.
+you can imagine that NumPy creates and seeds an accumulator for every row being reduced and calls the ufunc loop three times, once per row.
 Interested parties can read the [`PyUFunc_Reduce` function in the NumPy source code](https://github.com/numpy/numpy/blob/44dffc7ae68a48251e302e85d0308a98dcc41bf7/numpy/_core/src/umath/ufunc_object.c#L2661-L2722) to see how all the steering is done.
 
 ### The problem with multi-output reductions
@@ -306,7 +306,7 @@ def minmax(x, ...):
 but not performance-wise.
 
 That is a reduction with two outputs. `numpy.min` uses the `numpy.minimum` loop that returns the element-wise minima of two arrays and `numpy.max` uses the `numpy.maximum` loop that returns the element-wise maxima of two arrays.
-If we implemented a `numpy.minimummaximum` ufunc that returns the element-wise minima and maxima of two arrays in a single pass, we still couldn't implement `numpy.minmax` because the `reduce` method of such a ufunc wouldn't work, since it's a 2-input/2-output ufunc.
+If we implemented a `numpy.minimummaximum` ufunc that returns the element-wise minima and maxima of two arrays in a single pass, we still couldn't implement `numpy.minmax`: such a ufunc is 2-input/2-output, so its `reduce` method wouldn't work.
 
 ### Teaching ufuncs to do multi-output reductions
 
@@ -317,7 +317,7 @@ The idea is simple: if the forward loop cannot be steered into doing a reduction
 So, on top of its forward element-wise loop, a ufunc's loop implementation can now register an optional, dedicated _reduction loop_, and `reduce` will pick that one up and steer it instead of the forward one.
 
 The first question is how many inputs and outputs such a loop should have.
-Going back to the low level picture from the previous section, a reduction that accumulates N values needs the N current accumulators coming in, plus the one element that is currently being streamed in from the array being reduced, and it produces the N updated accumulators.
+Going back to the low level picture from the previous section, a reduction that accumulates N values needs the N current accumulators coming in, plus the one element that is currently being streamed in from the array being reduced. It produces the N updated accumulators.
 That is an `N + 1-in/N-out` loop.
 The nice thing about this convention is that for `N = 1` it collapses to `2-in/1-out`, which is exactly the shape of the classic forward loops that `reduce` has always been steering.
 In other words, the way `numpy.add.reduce` has always worked is just the `N = 1` special case of the new signature, so the machinery needs only one code path and nothing had to change for the existing single-output ufuncs.
@@ -483,7 +483,7 @@ and just like in the single-output case, reducing over an axis of a multi-dimens
 
 A ufunc with more than one output can only be reduced if it registers such a reduction loop, and `reduce` then returns a tuple with one array (or scalar) per output.
 The mechanism landed in [numpy/numpy#31816](https://github.com/numpy/numpy/pull/31816) and there is a [tutorial in the NumPy docs](https://numpy.org/devdocs/user/c-info.reduction-loop-tutorial.html) on how to add a reduction loop to your own ufunc.
-For now `reduce` is the only ufunc method that works with more than one output, and teaching `reduceat` and `accumulate` the same trick is being worked on in [numpy/numpy#32212](https://github.com/numpy/numpy/pull/32212) and [numpy/numpy#32213](https://github.com/numpy/numpy/pull/32213).
+For now `reduce` is the only ufunc method that works with more than one output, and I am working on teaching `reduceat` and `accumulate` the same trick in [numpy/numpy#32212](https://github.com/numpy/numpy/pull/32212) and [numpy/numpy#32213](https://github.com/numpy/numpy/pull/32213).
 
 ### np.minmax revisited
 
@@ -532,7 +532,7 @@ so here we got the sums of `a[0:2]`, `a[2:5]` and `a[5:]`.
 That covers the common case but it does not cover segmented reductions in general, and the reason is that a single array of boundaries can only describe segments that are glued to each other.
 Each segment ends exactly where the next one begins and the last one always runs to the end of the axis, so there is no way to leave elements of the array out of every segment.
 Empty segments cannot be expressed either, and instead of raising, `reduceat` has a special case for that situation: if `indices[i] >= indices[i + 1]`, the i-th result is `array[indices[i]]`, a single unreduced element.
-On top of that, out-of-bounds indices are an error, so offsets that were computed somewhere else have to be clipped before you can use them.
+On top of that, out-of-bounds indices are an error, so you have to clip offsets that come from somewhere else before you can use them.
 
 Here is ragged data running into all of that at once, three lists of which the second one is empty and the last element of the array belongs to none of them
 
@@ -553,7 +553,7 @@ array([ 3,  0, 18])
 ```
 
 The i-th result is simply `ufunc.reduce(array[starts[i]:stops[i]])` and the offsets behave exactly like the bounds of a slice, so negative offsets count from the end of the axis and out-of-bounds offsets are clipped instead of raising.
-Segments are therefore allowed to skip elements, to overlap and to be empty, and an empty segment gives the identity of the ufunc, or the `initial` value if one is passed, which is required for ufuncs like `numpy.maximum` that have no identity
+Segments are therefore allowed to skip elements, to overlap and to be empty. An empty segment gives the identity of the ufunc, or the `initial` value if one is passed (passing one is required for ufuncs like `numpy.maximum` that have no identity)
 
 ```python
 >>> np.add.segmented_reduce(a, [1, 5], [3, 7])                  # skipping elements
@@ -564,18 +564,18 @@ array([10,  5])
 array([-1,  7])
 ```
 
-Choosing separate start and stop offsets instead of a single offsets array is what buys all of that, since with one array the segments are back-to-back by construction, which is exactly the `reduceat` limitation, while a plain offsets array is still only a slice away as `starts=offsets[:-1]` and `stops=offsets[1:]`.
-[CCCL's `segmented_reduce`](https://nvidia.github.io/cccl/unstable/python/compute_api.html#cuda.compute.algorithms.segmented_reduce) makes the same choice with its `start_offsets_in` and `end_offsets_in` arrays, [PyTorch's `torch.segment_reduce`](https://docs.pytorch.org/docs/main/generated/torch.segment_reduce.html) takes lengths or a single array of offsets, and [JAX's `jax.ops.segment_sum`](https://docs.jax.dev/en/latest/_autosummary/jax.ops.segment_sum.html) and [TensorFlow's `tf.math.segment_sum`](https://www.tensorflow.org/api_docs/python/tf/math/segment_sum) take segment ids instead, one integer per element saying which segment that element belongs to.
+Choosing separate start and stop offsets instead of a single offsets array is what buys all of that: with one array the segments are back-to-back by construction, which is exactly the `reduceat` limitation. And a plain offsets array is still only a slice away, as `starts=offsets[:-1]` and `stops=offsets[1:]`.
+[CCCL's `segmented_reduce`](https://nvidia.github.io/cccl/unstable/python/compute_api.html#cuda.compute.algorithms.segmented_reduce) makes the same choice with its `start_offsets_in` and `end_offsets_in` arrays, [PyTorch's `torch.segment_reduce`](https://docs.pytorch.org/docs/main/generated/torch.segment_reduce.html) takes lengths or a single array of offsets. [JAX's `jax.ops.segment_sum`](https://docs.jax.dev/en/latest/_autosummary/jax.ops.segment_sum.html) and [TensorFlow's `tf.math.segment_sum`](https://www.tensorflow.org/api_docs/python/tf/math/segment_sum) take segment ids instead, one integer per element saying which segment that element belongs to.
 Segment ids are the more general representation, since they let you group arbitrary scattered elements of the array into the same segment, which start and stop offsets cannot: a segment has to be a contiguous run along the axis, and anything else has to be sorted or permuted first.
 That is the one thing we give up, and in exchange we keep the `axis` argument, while CCCL works on 1-D buffers only and JAX and TensorFlow always segment along the first axis.
 
-`ufunc.segmented_reduce` is being worked on in [numpy/numpy#32243](https://github.com/numpy/numpy/pull/32243) and is still under development, so the details of the API may still change.
+I am still working on `ufunc.segmented_reduce` in [numpy/numpy#32243](https://github.com/numpy/numpy/pull/32243), so the details of the API may still change.
 
 ## Turning functions into gufuncs
 
 The last thing I worked on was generalized ufuncs, which we mentioned at the beginning of the post but never really explained.
 A gufunc operates subarray-by-subarray instead of element-by-element, and what it operates on is described by a _signature_ like `(n),(n)->()` for an inner product.
-The parentheses give the shape of the _core_ of each operand, so `(n)` means that operand contributes a 1-dimensional subarray of length `n` and `()` means it contributes a scalar, while every dimension that is not consumed by a core is looped over and broadcast, exactly like a plain ufunc broadcasts over everything (a plain ufunc is really just the `(),()->()` case).
+The parentheses give the shape of the _core_ of each operand, so `(n)` means that operand contributes a 1-dimensional subarray of length `n` and `()` means it contributes a scalar. Every dimension that is not consumed by a core is looped over and broadcast, exactly like a plain ufunc broadcasts over everything (a plain ufunc is really just the `(),()->()` case).
 
 The loop looks like the ufunc loops from before, except that `dimensions` now also carries the core lengths and `steps` carries the core strides on top of the outer ones.
 Here is one for the signature `(n)->()`, the sum along the core axis
@@ -624,17 +624,17 @@ void double_sum_gufunc_loop(char **args, const npy_intp *dimensions,
 }
 ```
 
-That inner loop is the whole point: the kernel sees an entire subarray at once, so operations that are not element-wise at all can still be written as a single pass in C, and they get broadcasting, dtype resolution, `out` and subclass handling from the ufunc machinery for free.
+That inner loop is the whole point: the kernel sees an entire subarray at once, so you can still write operations that are not element-wise at all as a single pass in C, and they get broadcasting, dtype resolution, `out` and subclass handling from the ufunc machinery for free.
 The [generalized ufunc API docs](https://numpy.org/doc/stable/reference/c-api/generalized-ufuncs.html#c-api-generalized-ufuncs) have the full rules for signatures and for what the loop is handed.
 
 The first function I converted was `numpy.unwrap`, and there the motivation was [performance and the ability to preserve `ndarray` subclasses](https://github.com/numpy/numpy/issues/9959).
 This function unwraps a signal by changing elements which have an absolute difference from their predecessor of more than `max(discont, period/2)` to their period-complementary values.
 It is therefore a scan, since each output element depends on the running phase correction accumulated over the whole prefix of the array, so it can never be an element-wise ufunc. The existing implementation was written in Python and was using other NumPy functions. As a result, it used to allocate a handful of intermediate arrays for the differences, the modulo and the cumulative correction, and always returned a base `ndarray` instead of preserving `ndarray` subclasses (which ufuncs automatically handle).
-As a gufunc with signature `(n),(),()->(n)`, the values with a core of length `n`, the `discont` and `period` parameters as scalars and an output with the same core, all of that becomes a single pass in C++ with no temporaries, and preserving `ndarray` subclasses came along as a bonus since the ufunc machinery handles that.
+As a gufunc it has the signature `(n),(),()->(n)`: the values have a core of length `n`, the `discont` and `period` parameters are scalars, and the output has the same core as the values. All of that becomes a single pass in C++ with no temporaries, and preserving `ndarray` subclasses came along as a bonus since the ufunc machinery handles that.
 
 The other one, which I am still working on, is `numpy.searchsorted`, and there the motivation is features rather than speed.
 It requires the sorted array to be 1-dimensional, so searching a batch of sorted rows means writing a Python loop over the rows.
-Written as a gufunc with signature `(n),(m?)->(m?)`, the core dimension `n` is the sorted axis and everything else broadcasts, so N-dimensional input and batching fall out of the machinery, and the `?` marks an optional dimension, which is how the scalar-key case keeps working.
+Written as a gufunc with signature `(n),(m?)->(m?)`, the core dimension `n` is the sorted axis and everything else broadcasts, so N-dimensional input and batching fall out of the machinery. The `?` marks an optional dimension, which is how the scalar-key case keeps working.
 What is still open is whether to expose an `axis` keyword at the Python level or to always search along the innermost axis and let people bring the axis they want to the end themselves.
 
 `numpy.unwrap` became a gufunc in [numpy/numpy#31848](https://github.com/numpy/numpy/pull/31848), the mask-aware `numpy.ma.unwrap` was added in [numpy/numpy#32091](https://github.com/numpy/numpy/pull/32091), and `numpy.searchsorted` is being worked on in [numpy/numpy#32346](https://github.com/numpy/numpy/pull/32346).
@@ -642,9 +642,9 @@ What is still open is whether to expose an `axis` keyword at the Python level or
 ## Wrapping up and what may come next
 
 On the technical side, there is a clear list of things to finish.
-The multi-output reduction mechanism currently only works with the `reduce` method, so the next step is teaching `reduceat` and `accumulate` to pick up the dedicated reduction loops too, which is being worked on in [numpy/numpy#32212](https://github.com/numpy/numpy/pull/32212) and [numpy/numpy#32213](https://github.com/numpy/numpy/pull/32213), and `segmented_reduce` also needs to be finalized in [numpy/numpy#32243](https://github.com/numpy/numpy/pull/32243).
+The multi-output reduction mechanism currently only works with the `reduce` method, so the next step is teaching `reduceat` and `accumulate` to pick up the dedicated reduction loops too ([numpy/numpy#32212](https://github.com/numpy/numpy/pull/32212), [numpy/numpy#32213](https://github.com/numpy/numpy/pull/32213)). `segmented_reduce` also needs to be finalized in [numpy/numpy#32243](https://github.com/numpy/numpy/pull/32243).
 After that, it is worth exploring what else the new reduction loops make possible. Anything that can be expressed as a reduction operation can now get its own dedicated single-pass loop, and computing the mean and the variance of an array in a single pass is one example that comes to mind.
 
 On a personal note, this internship was a very valuable learning experience.
-I came into it with essentially no C experience: I had read [_The C Programming Language_ (K&R)](https://en.wikipedia.org/wiki/The_C_Programming_Language) and the [Extending and Embedding the Python Interpreter](https://docs.python.org/3/extending/index.html) docs, and built a [small C extension](https://github.com/ikrommyd/tensor.c) to learn how C extensions are written, and that was about it, so getting to learn NumPy's internals was more valuable to me than I can express.
+I came into it with essentially no C experience: I had read [_The C Programming Language_ (K&R)](https://en.wikipedia.org/wiki/The_C_Programming_Language) and the [Extending and Embedding the Python Interpreter](https://docs.python.org/3/extending/index.html) docs, and built a [small C extension](https://github.com/ikrommyd/tensor.c) to learn how C extensions are written, and that was about it. Getting to learn NumPy's internals was more valuable to me than I can express.
 Through this work I also became a member of the NumPy triage team, and I will continue working on NumPy, hopefully becoming a maintainer one day.
