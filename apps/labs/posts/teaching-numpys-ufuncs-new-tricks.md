@@ -29,18 +29,21 @@ What changed my mind was a computational physics track a couple of years later, 
 I ended up doing a PhD in High-Energy Physics, a field that collects petabytes of data per experiment per year, as a member of the [CMS](https://cms.cern) experiment at [CERN](https://home.cern), where I worked heavily with the [Scikit-HEP](https://scikit-hep.org) stack of tools.
 I wanted to program more and I was also learning more about open source software, so I started cold-messaging people like "Hey, you maintain this tool, I'm a HEP student, I want to work on it", and I ended up becoming a maintainer of a few of those tools, most notably [Awkward Array](https://awkward-array.org) and [Coffea](https://coffea-hep.readthedocs.io).
 Scikit-HEP is itself a member of [Scientific Python](https://scientific-python.org), so I gradually got more involved there too, while my love for physics was going down and my love for programming and scientific computing was going up.
-At [SciPy 2025](https://www.scipy2025.scipy.org) I hacked a bit on NumPy during the sprints and met [Nathan Goldbaum](https://github.com/ngoldbaum), who would become my mentor and who told me to apply for the Quansight internship program, so I did, and I was given the opportunity to officially work on NumPy!
-My first task was to implement `np.minmax` so let's jump right on that and see why that was not trivial in NumPy before.
+At [SciPy 2025](https://www.scipy2025.scipy.org) I hacked a bit on NumPy during the sprints and met [Nathan Goldbaum](https://github.com/ngoldbaum), who would become my mentor and who told me to apply for the Quansight internship program.
+A year later, I was accepted into the 2026 Quansight internship cohort where I had the opportunity to work on NumPy!
 
 ## What new tricks did NumPy's ufuncs learn
 
-During the internship, I got to work on a few things on NumPy as well as general maintenance like bug-fixing and triaging. The core larger projects I worked on were enabling multi-output reductions in NumPy and implementing a heavily requested `np.minmax` function as a follow-up, implementing segmented reductions. Finally I worked on converting the internals of some functions into gufuncs to allow new features and/or boost performance.
+During the internship, I got to work on a few things on NumPy as well as general maintenance like bug-fixing and triaging. The core larger projects I worked on were enabling multi-output reductions in NumPy and implementing a heavily requested `np.minmax` function as a follow-up, and implementing segmented reductions. Finally I worked on converting the internals of some functions into gufuncs to allow new features and/or boost performance.
 
 Perhaps this paragraph did not make a lot of sense and there were some unknown words but everything will be explained in the rest of this post. To do so, we have to start by explaining how some NumPy internals work.
 
 ### What are NumPy's universal functions
 
-NumPy has this concept of "universal functions" or "[ufuncs](https://numpy.org/doc/stable/user/basics.ufuncs.html)" for short. Ufuncs are functions that operate on arrays in an element-wise fashion. They are "vectorized" and they take in a fixed number of inputs and produce a fixed number of outputs. They also support broadcasting and typecasting and other standard features. For example [numpy.add](https://numpy.org/doc/stable/reference/generated/numpy.add.html#numpy.add) is a ufunc that takes in two input arrays and produces one output array whose elements are the result of the element-by-element addition of the elements of the two input arrays.
+NumPy has a concept of "universal functions" or "[ufuncs](https://numpy.org/doc/stable/user/basics.ufuncs.html)" for short.
+Ufuncs are functions that operate on arrays in an element-wise fashion. They are "vectorized" and they take in a fixed number of inputs and produce a fixed number of outputs.
+They also support broadcasting and typecasting and other standard features.
+For example, [numpy.add](https://numpy.org/doc/stable/reference/generated/numpy.add.html#numpy.add) is a ufunc that takes two arrays as input arguments and writes to one output array whose elements are the result of the element-by-element addition of the elements of the two input arrays.
 
 ```python
 >>> import numpy as np
@@ -51,37 +54,73 @@ array([[ 6,  8],
        [10, 12]])
 ```
 
-and as we mentioned earlier broadcasting and typecasting is supported
+and as we mentioned earlier, broadcasting and typecasting are supported
 
 ```python
->>> integer_array = np.array([[1,2],[3,4]])
->>> float_array = np.array([1.1,2.2])
+>>> integer_array = np.array([[1,2],[3,4]], dtype=np.int64)
+>>> float_array = np.array([1.1,2.2], dtype=np.float64)
 >>> np.add(integer_array, float_array)
 array([[2.1, 4.2],
        [4.1, 6.2]])
 ```
 
-where you can notice that while `x1` is an array of integers and is 2x2, `x2` is an array of doubles and is only a single row of two elements so integers need to be upcasted to doubles to do the addition and also `x2` is broadcasted to every row of `x1` to make the shapes match and do the addition.
+where you can notice that `integer_array` is a 2x2 array of integers, while `float_array` is a single row of two doubles. Integers need to be upcasted to doubles to do the addition and also `float_array` needs to be broadcasted to every row of `integer_array` to make the shapes match and do the addition.
 
-There are also [generalized ufuncs](https://numpy.org/doc/stable/reference/c-api/generalized-ufuncs.html#c-api-generalized-ufuncs) which are functions over vectors (or arrays) of elements.
-They effectively operate on a subarray-by-subarray basis instead of element-by-element. We'll talk more about those later.
+There are also [generalized ufuncs](https://numpy.org/doc/stable/reference/c-api/generalized-ufuncs.html#c-api-generalized-ufuncs) which are functions over arrays of elements.
+They operate on a subarray-by-subarray basis instead of element-by-element.
+We'll talk more about those later.
 
 Everything else in this post is a variation on these loops, so it is worth going through the anatomy of one before we go any further.
-Reductions, the multi-output reductions we will get to later, and generalized ufuncs are all differences in what a loop is handed and how NumPy calls it, and none of that will make sense without seeing the plain element-wise case first.
-So let's write one, piece by piece. This is an illustrative sketch of one of the `numpy.add` loops, the one for the `double` data type.
+Reductions and generalized ufuncs are implemented in NumPy in terms of what a loop is handed and how NumPy calls it.
+However, none of that will make sense without seeing the plain element-wise case first.
+So let's write one. This is an illustrative sketch of one of the `numpy.add` loops, the one for the `double` data type:
 
-Every ufunc loop has the same signature:
+```c
+void double_add_ufunc_loop(char **args, const npy_intp *dimensions,
+                           const npy_intp *steps, void *data)
+{
+    /* Extract dimensions (number of elements to process) */
+    npy_intp n = dimensions[0];
+
+    /* Pointers to the start of input and output data buffers */
+    char *in1_ptr = args[0];
+    char *in2_ptr = args[1];
+    char *out_ptr = args[2];
+
+    /* Byte strides for moving to the next element in each array */
+    npy_intp in1_step = steps[0];
+    npy_intp in2_step = steps[1];
+    npy_intp out_step = steps[2];
+
+    /* Execute the element-wise addition */
+    for (npy_intp i = 0; i < n; i++) {
+        /* Cast pointers to double types and dereference */
+        double in1_val = *(double *)in1_ptr;
+        double in2_val = *(double *)in2_ptr;
+
+        /* Do the addition and write it to the output data buffer */
+        *(double *)out_ptr = in1_val + in2_val;
+
+        /* Advance byte pointers by stride length */
+        in1_ptr += in1_step;
+        in2_ptr += in2_step;
+        out_ptr += out_step;
+    }
+}
+```
+
+Let's break it down piece by piece. Every ufunc loop has the same signature:
 
 ```c
 void double_add_ufunc_loop(char **args, const npy_intp *dimensions,
                            const npy_intp *steps, void *data)
 ```
 
-NumPy does not hand the loop arrays, it hands it raw memory plus instructions on how to walk it.
-`args` holds a pointer to the start of each operand's data buffer (the underlying data buffers of NumPy arrays), `dimensions` says how many elements to process, and `steps` says how to get from one element to the next in each operand.
-`data` is optional extra state a loop can be registered with, which we will not use here.
+NumPy does not hand the loop arrays, it hands it pointers to memory buffers alongside instructions on how to iterate over the buffers.
+The `args` holds a pointer to the start of each operand's data buffer (the underlying data buffers of NumPy arrays), `dimensions` holds the number of elements along each dimension of the array, and `steps` says how to get from one element to the next in each operand.
+The `data` is optional extra state a loop can be registered with, which we will not use here.
 
-The first thing to read out is how many elements this call has to process:
+The first thing we need to do to implement a loop is read out how many elements this call has to process:
 
 ```c
 npy_intp n = dimensions[0];
@@ -128,48 +167,12 @@ for (npy_intp i = 0; i < n; i++) {
 
 Each iteration casts the two input pointers to `double *` and dereferences them to get the current pair of values, adds them, writes the result through the output pointer, and then advances all three pointers by their strides to land on the next element.
 
-Putting it all together, that is the whole loop:
-
-```c
-void double_add_ufunc_loop(char **args, const npy_intp *dimensions,
-                           const npy_intp *steps, void *data)
-{
-    /* Extract dimensions (number of elements to process) */
-    npy_intp n = dimensions[0];
-
-    /* Pointers to the start of input and output data buffers */
-    char *in1_ptr = args[0];
-    char *in2_ptr = args[1];
-    char *out_ptr = args[2];
-
-    /* Byte strides for moving to the next element in each array */
-    npy_intp in1_step = steps[0];
-    npy_intp in2_step = steps[1];
-    npy_intp out_step = steps[2];
-
-    /* Execute the element-wise addition */
-    for (npy_intp i = 0; i < n; i++) {
-        /* Cast pointers to double types and dereference */
-        double in1_val = *(double *)in1_ptr;
-        double in2_val = *(double *)in2_ptr;
-
-        /* Do the addition and write it to the output data buffer */
-        *(double *)out_ptr = in1_val + in2_val;
-
-        /* Advance byte pointers by stride length */
-        in1_ptr += in1_step;
-        in2_ptr += in2_step;
-        out_ptr += out_step;
-    }
-}
-```
-
-All the setup for the loop is done by NumPy as part of NumPy's ufunc infrastructure. Therefore, a set of loop implementations for different data types and some metadata about the operation is enough to create a ufunc. We did `double` here which is `numpy.float64` in NumPy. To define a ufunc over more data types you need to define such loops for all the data types you want the loop to work on. For more information on how to create your own ufuncs, see the [Writing your own ufunc docs](https://numpy.org/devdocs/user/c-info.ufunc-tutorial.html).
+All the setup for the loop is done by NumPy as part of NumPy's ufunc infrastructure. Therefore, a set of loop implementations for different data types and some metadata about the operation is enough to create a ufunc. We did `double` here, which is `numpy.float64` in NumPy. To define a ufunc over more data types you need to define such loops for all the data types you want the loop to work on. For more information on how to create your own ufuncs, see the [Writing your own ufunc docs](https://numpy.org/devdocs/user/c-info.ufunc-tutorial.html).
 
 ### How NumPy does reductions
 
 Now that we have explained the basics of ufunc internals, let's move into reductions and how NumPy does them.
-Reductions are operations that collapse a dimension. For example a summation is a reduction:
+Reductions are operations that collapse a dimension. For example, a summation is a reduction:
 
 ```python
 >>> np.sum([1,2,3])
@@ -186,16 +189,22 @@ np.int64(10)
 
 In the examples above, a 1-dimensional array is reduced down to a scalar, and a 2-dimensional array is reduced down to either a 1-dimensional array if one dimension is collapsed or a scalar if both are collapsed. But how does NumPy actually perform those operations?
 
-One might think that there are specialized compiled kernels/loops (like the ufunc loops) to do reductions. What if I told you that all such reductions in NumPy are actually using regular forward ufunc loops underneath (like the one we wrote earlier)? But how is this possible? Reductions are a wrapper a method of the ufunc called `reduce`, so `numpy.sum` is equivalent to `numpy.add.reduce`:
+One might think that there are specialized compiled kernels/loops (like the ufunc loops) to do reductions. It turns out all simple reductions in NumPy are actually using regular forward ufunc loops underneath, like the one we wrote earlier.
+But how is this possible?
+Reductions are a wrapper around a method of the ufunc called `reduce`, so `numpy.sum` is equivalent to `numpy.add.reduce`:
 
 ```python
 >>> np.add.reduce([1,2,3])
 np.int64(6)
 ```
 
-To do a summation, NumPy is actually using the `numpy.add` ufunc and its loops. Similarly, `numpy.prod` is using the `numpy.multiply` ufunc, `numpy.min` is using the `numpy.minimum` ufunc, and so on.
+Similarly, `numpy.prod` uses the `numpy.multiply` ufunc, `numpy.min` uses the `numpy.minimum` ufunc, and so on.
 
-But how can the loop we wrote in C earlier be used to do a summation? It isn't immediately obvious. Let's consider the following. If we want to sum a 1-dimensional array like `[1,2,3]` to get 6, we need an accumulator that we keep adding all the values of the array to. That accumulator usually starts at 0. Then we need to iterate over the array, adding the current element on the accumulator
+But how can the loop we wrote in C earlier be used to do a summation?
+Let's consider summing a 1-dimensional array like `[1,2,3]` to get 6.
+We need an accumulator to store the result.
+For integers, the default initial value for reductions is 0, but you can also choose a different value.
+Then we need to iterate over the array, adding elements and keeping a running sum in the accumulator.
 
 ```python
 >>> arr = [1,2,3]
@@ -207,9 +216,12 @@ But how can the loop we wrote in C earlier be used to do a summation? It isn't i
 6
 ```
 
-Can the `double_add_ufunc_loop` loop be used to do that? Well if we make the `args[0]` input pointer point to the accumulator location, and we set `args[2]` to be equal to `args[0]` (the output location is the same as the first input pointer location and both are therefore the accumulator location) and we also set `steps[0] = steps[2] = 0` (the accumulator does not move) then if we also seed the accumulator with the value 0, the loop does what we want.
+Can the `double_add_ufunc_loop` loop be used to do that?
+If we set the `args[0]` input pointer to the accumulator location, and we set `args[2]` to be equal to `args[0]`, then that makes the output location the same as the first input pointer location and both become the accumulator location.
+Then if we set `steps[0] = steps[2] = 0` and seed the accumulator with the value 0, we have an accumulator that starts at zero and does not move.
+The loop now does exactly what we want.
 
-And this is what NumPy does in the `reduce` method of ufuncs. To do summation in particular, it steers the `numpy.add` loop effectively like this to reduce over an array whose data buffer is `data` and has `n` elements and a stride `stride` to get the next element
+And this is what NumPy does in the `reduce` method of ufuncs. To do summation in particular, it steers the `numpy.add` loop like this to reduce over an array whose data buffer is `data` and has `n` elements and a stride `stride` to get the next element
 
 ```c
 double add_reduce(double *data, npy_intp n, npy_intp stride)
@@ -255,7 +267,7 @@ Interested parties can read the [`PyUFunc_Reduce` function in the NumPy source c
 
 ### The problem with multi-output reductions
 
-But what if we want to accumulate multiple values at once as we slide over the array? As an example, someone might want to simultaneously accumulate the sum and the product of the elements of an array. Another common pair reduction pair is the minimum and maximum.
+But what if we want to accumulate multiple values at once as we slide over the array? As an example, someone might want to simultaneously accumulate the sum and the product of the elements of an array. Another common reduction pair is the minimum and maximum.
 
 Here's where we run into a problem. So far, all the ufuncs we've mentioned that we can call `reduce` on took in two input arrays and returned one output array.
 What happens if we try to call `reduce` on ufuncs that accept/return a different number of input/output arrays? This used to be the error:
@@ -276,16 +288,15 @@ Traceback (most recent call last):
 ValueError: reduce only supported for binary functions
 ```
 
-`reduce` was only supported for ufuncs that are 2-in/1-out and that sort of made sense from a structural perspective.
-First of all reducing means that there's some sort of comparison between two arrays so the two input limitation is kind of intuitive and the one output limitation is due to the fact that the reductions were always using the forward ufunc loops to perform them.
-
-A reduction that accumulates N values, when we think about it at the low level, needs N accumulation locations (pointers) and one more pointer that slides over the reduced array. So if a ufunc is `2-in/N-out`, it means that the loop uses two input pointers and N output pointers.
-There aren't enough pointers to do the trick where we'd set N input pointers equal to N output pointers equal to the N accumulator locations in a similar way we did for the `numpy.add` loop (where N = 1).
-Reductions using such a trick can be performed only when the loop is already `N + 1-in/N-out`.
+The `reduce` method is only supported for ufuncs that are 2-in/1-out.
+Reducing means that there's some sort of comparison (min/max) or accumulation (sum/prod) between two arrays, so the two input limitation is intuitive in that sense.
+The one output limitation is due to the fact that the reductions were implemented by re-using the forward ufunc loops: at the low level, a reduction that accumulates N values needs N accumulator locations (pointers) and one more pointer that slides over the reduced array, so the pointer aliasing trick we did for the `numpy.add` loop (where N = 1) only works when the loop is already `N + 1-in/N-out`.
+A `2-in/N-out` loop only gives us two input pointers and N output pointers, so for more than one output there aren't enough input pointers to set equal to the N accumulator locations.
 
 ### np.minmax
 
-A long-requested feature in NumPy has been a `numpy.minmax` reduction that returns the minimum and maximum value in a single pass. Of course that is structurally equivalent to
+A [long-requested feature](https://github.com/numpy/numpy/issues/9836) in NumPy has been a `numpy.minmax` reduction that returns the minimum and maximum value in a single pass.
+That is structurally equivalent to
 
 ```python
 def minmax(x, ...):
@@ -295,7 +306,7 @@ def minmax(x, ...):
 but not performance-wise.
 
 That is a reduction with two outputs. `numpy.min` uses the `numpy.minimum` loop that returns the element-wise minima of two arrays and `numpy.max` uses the `numpy.maximum` loop that returns the element-wise maxima of two arrays.
-If we implemented a ufunc like `numpy.minimummaximum` that returns the element-wise minima and maxima of two arrays in a single pass, we still couldn't implement `numpy.minmax` because the `reduce` method of such a ufunc wouldn't work, since it's a 2-in/2-out ufunc as explained in the previous section.
+If we implemented a `numpy.minimummaximum` ufunc that returns the element-wise minima and maxima of two arrays in a single pass, we still couldn't implement `numpy.minmax` because the `reduce` method of such a ufunc wouldn't work, since it's a 2-input/2-output ufunc.
 
 ### Teaching ufuncs to do multi-output reductions
 
@@ -319,6 +330,8 @@ Concretely, such a loop is handed its data pointers and its strides in this orde
 
 where `x` is the element streamed in from the array being reduced, and each `out_i` points at the same memory as the matching `acc_i` and has the same stride as it.
 It is the same aliasing trick we did for `numpy.add`, just done N times instead of once.
+In fact, this is exactly the layout the `add_reduce` snippet from earlier was setting up: its `args` was `{ &accum, data, &accum }`, which is just `[acc_0, x, out_0]` for `N = 1`.
+We will see the `N = 2` version of the same steering in the `minmax_reduce` example below.
 
 Let's make this concrete with the `numpy.minimummaximum` ufunc we wished for in the previous section, a `2-in/2-out` ufunc that computes the element-wise minimum and maximum of two arrays in a single pass.
 Its forward loop is the boring part and looks just like the `numpy.add` one, only with one more output pointer to keep track of (I'll write `min` and `max` for the scalar minimum and maximum of two numbers to keep the snippets short)
@@ -504,7 +517,7 @@ array([[0, 1, 2],
 
 A segmented reduction is a reduction applied to consecutive chunks of an array instead of to the whole thing.
 It is the natural operation on ragged data: if you have a bunch of variable-length lists flattened into a single array, plus an array of offsets telling you where each list starts and ends, then "the sum of each list" is a segmented sum.
-That is how [Awkward Array](https://awkward-array.org) stores its data, it is also what the rows of a CSR sparse matrix look like, and it is why pretty much every array library that touches this kind of data ends up with some version of the operation.
+That is how [Awkward Array](https://awkward-array.org) stores its data, it is also what the rows of a [CSR sparse matrix](<https://en.wikipedia.org/wiki/Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format)>) look like, and it is why pretty much every array library that touches this kind of data ends up with some version of the operation.
 
 NumPy already has something close in `ufunc.reduceat`, which takes a single array of indices and reduces the slices between consecutive ones
 
@@ -614,8 +627,9 @@ void double_sum_gufunc_loop(char **args, const npy_intp *dimensions,
 That inner loop is the whole point: the kernel sees an entire subarray at once, so operations that are not element-wise at all can still be written as a single pass in C, and they get broadcasting, dtype resolution, `out` and subclass handling from the ufunc machinery for free.
 The [generalized ufunc API docs](https://numpy.org/doc/stable/reference/c-api/generalized-ufuncs.html#c-api-generalized-ufuncs) have the full rules for signatures and for what the loop is handed.
 
-The first function I converted was `numpy.unwrap`, and there the motivation was performance.
-`unwrap` is a scan, since each output element depends on the running phase correction accumulated over the whole prefix of the array, so it can never be an element-wise ufunc, and the Python implementation it used to have had to allocate a handful of intermediate arrays for the differences, the modulo and the cumulative correction.
+The first function I converted was `numpy.unwrap`, and there the motivation was [performance and the ability to preserve `ndarray` subclasses](https://github.com/numpy/numpy/issues/9959).
+This function unwraps a signal by changing elements which have an absolute difference from their predecessor of more than `max(discont, period/2)` to their period-complementary values.
+It is therefore a scan, since each output element depends on the running phase correction accumulated over the whole prefix of the array, so it can never be an element-wise ufunc. The existing implementation was written in Python and was using other NumPy functions. As a result, it used to allocate a handful of intermediate arrays for the differences, the modulo and the cumulative correction, and always returned a base `ndarray` instead of preserving `ndarray` subclasses (which ufuncs automatically handle).
 As a gufunc with signature `(n),(),()->(n)`, the values with a core of length `n`, the `discont` and `period` parameters as scalars and an output with the same core, all of that becomes a single pass in C++ with no temporaries, and preserving `ndarray` subclasses came along as a bonus since the ufunc machinery handles that.
 
 The other one, which I am still working on, is `numpy.searchsorted`, and there the motivation is features rather than speed.
