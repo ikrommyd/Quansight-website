@@ -167,6 +167,10 @@ for (npy_intp i = 0; i < n; i++) {
 
 Each iteration casts the two input pointers to `double *` and dereferences them to get the current pair of values, adds them, writes the result through the output pointer, and then advances all three pointers by their strides to land on the next element.
 
+Here is the whole loop in one picture, with a strided view as the second input so that the strides are visible:
+
+![The three operands of the loop drawn as rows of cells, with a pointer at the current element of each row and an arrow for the stride to the next one. The second input is a strided view, so its stride skips a cell.](/posts/teaching-numpys-ufuncs-new-tricks/ufunc-loop-anatomy.svg)
+
 NumPy's ufunc infrastructure does all the setup for the loop. Therefore, a set of loop implementations for different data types and some metadata about the operation is enough to create a ufunc. We did `double` here, which is `numpy.float64` in NumPy. To define a ufunc over more data types you need to define such loops for all the data types you want the loop to work on. For more information on how to create your own ufuncs, see the [Writing your own ufunc docs](https://numpy.org/devdocs/user/c-info.ufunc-tutorial.html).
 
 ### How NumPy does reductions
@@ -221,6 +225,10 @@ If we set the `args[0]` input pointer to the accumulator location, and we set `a
 Then if we set `steps[0] = steps[2] = 0` and seed the accumulator with the value 0, we have an accumulator that starts at zero and does not move.
 The loop now does exactly what we want.
 
+Here is that wiring drawn out:
+
+![The accumulator feeds the loop as args[0] with a stride of 0, the array feeds it as args[1] and walks forward, and the result is written back into the accumulator through args[2].](/posts/teaching-numpys-ufuncs-new-tricks/reduce-1d.svg)
+
 And this is what NumPy does in the `reduce` method of ufuncs. To do summation in particular, it steers the `numpy.add` loop like this. Here the array being reduced has data buffer `data`, `n` elements, and a stride `stride` between elements:
 
 ```c
@@ -263,6 +271,9 @@ array([ 3, 12, 21])
 ```
 
 you can imagine that NumPy creates and seeds an accumulator for every row being reduced and calls the ufunc loop three times, once per row.
+
+![A 3 by 3 array reduced along axis 1, with an arrow from each row to its own accumulator holding the row sum: 3, 12 and 21.](/posts/teaching-numpys-ufuncs-new-tricks/reduce-2d.svg)
+
 Interested parties can read the [`PyUFunc_Reduce` function in the NumPy source code](https://github.com/numpy/numpy/blob/44dffc7ae68a48251e302e85d0308a98dcc41bf7/numpy/_core/src/umath/ufunc_object.c#L2661-L2722) to see how all the steering is done.
 
 ### The problem with multi-output reductions
@@ -307,6 +318,10 @@ but not performance-wise.
 
 That is a reduction with two outputs. `numpy.min` uses the `numpy.minimum` loop that returns the element-wise minima of two arrays and `numpy.max` uses the `numpy.maximum` loop that returns the element-wise maxima of two arrays.
 If we implemented a `numpy.minimummaximum` ufunc that returns the element-wise minima and maxima of two arrays in a single pass, we still couldn't implement `numpy.minmax`: such a ufunc is 2-input/2-output, so its `reduce` method wouldn't work.
+
+Here is the problem in a picture: three things need to get into the loop and there are only two input pointers.
+
+![The minimummaximum forward loop has two inputs and two outputs. acc_min and the array element x take the two inputs, and acc_max is left outside with no way in.](/posts/teaching-numpys-ufuncs-new-tricks/multi-output-problem.svg)
 
 ### Teaching ufuncs to do multi-output reductions
 
@@ -480,6 +495,10 @@ minmax_t res = minmax_reduce(arr, 5, sizeof(double));   /* res.min = 1.0, res.ma
 ```
 
 and just like in the single-output case, reducing over an axis of a multi-dimensional array just means one pair of accumulators per output element instead of a single pair.
+
+Here is the reduction loop with all of its inputs and outputs wired up:
+
+![The minimummaximum reduction loop has three inputs, acc_min, acc_max and the array element x, and its two outputs are written back into acc_min and acc_max.](/posts/teaching-numpys-ufuncs-new-tricks/reduction-loop.svg)
 
 A ufunc with more than one output can only be reduced if it registers such a reduction loop, and `reduce` then returns a tuple with one array (or scalar) per output.
 The mechanism landed in [numpy/numpy#31816](https://github.com/numpy/numpy/pull/31816) and there is a [tutorial in the NumPy docs](https://numpy.org/devdocs/user/c-info.reduction-loop-tutorial.html) on how to add a reduction loop to your own ufunc.
