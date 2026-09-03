@@ -28,7 +28,7 @@ What changed my mind was a computational physics track a couple of years later, 
 
 I ended up doing a PhD in High-Energy Physics, a field that collects petabytes of data per experiment per year, as a member of the [CMS](https://cms.cern) experiment at [CERN](https://home.cern). There I worked heavily with the [Scikit-HEP](https://scikit-hep.org) stack of tools.
 I wanted to program more and I was also learning more about open source software, so I started cold-messaging people like "Hey, you maintain this tool, I'm a HEP student, I want to work on it". That is how I ended up becoming a maintainer of a few of those tools, most notably [Awkward Array](https://awkward-array.org) and [Coffea](https://coffea-hep.readthedocs.io).
-Scikit-HEP is itself a member of [Scientific Python](https://scientific-python.org), so I gradually got more involved there too, while my love for physics was going down and my love for programming and scientific computing was going up.
+Scikit-HEP is itself a member of [Scientific Python](https://scientific-python.org), so I gradually got more involved there too, while my love for programming and scientific computing was going up.
 At [SciPy 2025](https://www.scipy2025.scipy.org) I hacked a bit on NumPy during the sprints and met [Nathan Goldbaum](https://github.com/ngoldbaum), who would become my mentor and who told me to apply for the Quansight internship program.
 A year later, I was accepted into the 2026 Quansight internship cohort where I had the opportunity to work on NumPy!
 
