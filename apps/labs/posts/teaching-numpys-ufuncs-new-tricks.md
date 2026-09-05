@@ -169,7 +169,7 @@ Each iteration casts the two input pointers to `double *` and dereferences them 
 
 Here is the whole loop in one picture, with a strided view as the second input so that the strides are visible:
 
-![The three operands of the loop drawn as rows of cells, with a pointer at the current element of each row and an arrow for the stride to the next one. The second input is a strided view, so its stride skips a cell.](/posts/teaching-numpys-ufuncs-new-tricks/ufunc-loop-anatomy.svg)
+![The three operands of the loop drawn as rows of cells, with a pointer at the current element of each row and an arrow for the stride to the next one. The first row shows a 4-element input array with a stride of one element, showing an arrow between two consecutive elements. The second input is a strided view, so its stride skips a cell. The third row is the output and shows the result computed from the elements of both arrays recovered according to their strides.](/posts/teaching-numpys-ufuncs-new-tricks/ufunc-loop-anatomy.svg)
 
 NumPy's ufunc infrastructure does all the setup for the loop. Therefore, a set of loop implementations for different data types and some metadata about the operation is enough to create a ufunc. We did `double` here, which is `numpy.float64` in NumPy. To define a ufunc over more data types you need to define such loops for all the data types you want the loop to work on. For more information on how to create your own ufuncs, see the [Writing your own ufunc docs](https://numpy.org/devdocs/user/c-info.ufunc-tutorial.html).
 
